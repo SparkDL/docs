@@ -35,6 +35,9 @@
           {title: "\u6a21\u578b\u5b9a\u4e49API", url: "#api", children: [
           ]},
           {title: "Module", url: "#module", children: [
+              {title: "AbstractModule", url: "#abstractmodule" },
+              {title: "TensorModule", url: "#tensormodule" },
+              {title: "\u4f8b\u5b50", url: "#_1" },
           ]},
         ];
 
@@ -82,6 +85,7 @@ val model = Graph(Seq[linear], Seq[softmax])
 <p>后者的形式比较直观。</p>
 <h2 id="module">Module</h2>
 <p><code>Module</code>是BigDL中网络构建的基本单位，网络的每一种层都实现为一个<code>Module</code>。</p>
+<h3 id="abstractmodule">AbstractModule</h3>
 <p><code>com.intel.analytics.bigdl.nn.abstractnn</code>包内定义了<code>AbstractModule</code>，它是所有<code>Module</code>的原始基类：</p>
 <pre><code class="scala">package com.intel.analytics.bigdl.nn.abstractnn
 /**
@@ -151,6 +155,53 @@ abstract class AbstractModule[A &lt;: Activity: ClassTag, B &lt;: Activity: Clas
    */
   def updateOutput(input: A): B
 </code></pre>
+
+<p>这是个抽象方法, 留给子类去实现. 我们继承这个类然后实现这个方法即可实现前向传播进行inference了.</p>
+<h3 id="tensormodule">TensorModule</h3>
+<p>上面定义了Module的抽象类, 然后BigDL具体使用的是它的一个子类<code>TensorModule[T]</code>, 分别将<code>AbstractModule</code>的三个参数类型设为<code>Tensor[T], Tensor[T], T</code>, 也就是输入输出都是<code>Tensor</code>类型, 这样就可以把具体的计算过程全部使用<code>Tensor</code>的运算实现.</p>
+<pre><code class="scala">/**
+ * [[TensorModule]] is an abstract sub-class of [[AbstractModule]], whose
+ * input and output type both are [[Tensor]].
+ *
+ * @tparam T The numeric type in this module parameters
+ */
+abstract class TensorModule[T: ClassTag]
+  (implicit ev: TensorNumeric[T]) extends AbstractModule[Tensor[T], Tensor[T], T]
+</code></pre>
+
+<h3 id="_1">例子</h3>
+<p>看一个最简单的例子, <code>Add</code>层, 它简单的将每个输入各加上一个值: </p>
+<pre><code class="scala">/**
+ * adds a bias term to input data ;
+ *
+ * @param inputSize size of input data
+ */
+@SerialVersionUID(4268487849759172896L)
+class Add[T: ClassTag](val inputSize: Int
+  )(implicit ev: TensorNumeric[T]) extends TensorModule[T] with Initializable {
+
+  val bias = Tensor[T](inputSize)
+
+  override def updateOutput(input: Tensor[T]): Tensor[T] = {
+    output.resizeAs(input).copy(input)
+    if (input.isSameSizeAs(bias)) {
+      output.add(bias)
+    } else {
+      val batchSize = input.size(1)
+      ones.resize(batchSize).fill(ev.one)
+      val biasLocal = bias.view(bias.size.product)
+      val outputLocal = output.view(batchSize, output.size.product/batchSize)
+      outputLocal.addr(ev.fromType[Int](1), ones, biasLocal)
+    }
+    output
+  }
+</code></pre>
+
+<p><code>output</code>和<code>bias</code>都是一个<code>Tensor</code>类的对象, 如果二者的尺寸相同的话, 直接调用Tensor的add方法</p>
+<pre><code class="scala">output.add(bias)
+</code></pre>
+
+<p>就可以得到输出.</p>
 
   <br>
 </div>
