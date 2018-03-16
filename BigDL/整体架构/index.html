@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+  
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    
+    
+    <link rel="shortcut icon" href="../../img/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+    <title>整体架构 - SparkDL</title>
+    <link href="../../css/bootstrap-3.3.7.min.css" rel="stylesheet">
+    <link href="../../css/font-awesome-4.7.0.css" rel="stylesheet">
+    <link href="../../css/base.css" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/highlight.css">
+    <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+        <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+        <script src="https://oss.maxcdn.com/libs/respond.js/1.3.0/respond.min.js"></script>
+    <![endif]-->
+
+    <script src="../../js/jquery-3.2.1.min.js"></script>
+    <script src="../../js/bootstrap-3.3.7.min.js"></script>
+    <script src="../../js/highlight.pack.js"></script>
+    
+    <base target="_top">
+    <script>
+      var base_url = '../..';
+      var is_top_frame = false;
+        
+        var pageToc = [
+          {title: "\u6a21\u578b\u5b9a\u4e49API", url: "#api", children: [
+          ]},
+          {title: "Module", url: "#module", children: [
+          ]},
+        ];
+
+    </script>
+    <script src="../../js/base.js"></script>
+      <script src="../../search/require.js"></script>
+      <script src="../../search/search.js"></script> 
+</head>
+
+<body>
+<script>
+if (is_top_frame) { $('body').addClass('wm-top-page'); }
+</script>
+
+
+
+<div class="container-fluid wm-page-content">
+    
+
+    <p>BigDL的代码架构模仿了Torch，神经网络的构建以<code>Module</code>为核心，具体运算则以<code>Tensor</code>为单位执行。</p>
+<h2 id="api">模型定义API</h2>
+<p>BigDL支持2套模型定义API</p>
+<ul>
+<li>Sequential</li>
+<li>Functional</li>
+</ul>
+<p>对一个同样的例子：</p>
+<pre><code>Linear -&gt; Sigmoid -&gt; Softmax
+</code></pre>
+
+<p>采用Sequential的形式定义为：</p>
+<pre><code class="scala">val model = Sequential()
+model.add(Linear(...))
+model.add(Sigmoid())
+model.add(Softmax())
+</code></pre>
+
+<p>Functional的形式为：</p>
+<pre><code class="scala">val linear = Linear(...).inputs()
+val sigmoid = Sigmoid().inputs(linear)
+val softmax = Softmax().inputs(sigmoid)
+val model = Graph(Seq[linear], Seq[softmax])
+</code></pre>
+
+<p>后者的形式比较直观。</p>
+<h2 id="module">Module</h2>
+<p><code>Module</code>是BigDL中网络构建的基本单位，网络的每一种层都实现为一个<code>Module</code>。</p>
+<p><code>com.intel.analytics.bigdl.nn.abstractnn</code>包内定义了<code>AbstractModule</code>，它是所有<code>Module</code>的原始基类：</p>
+<pre><code class="scala">package com.intel.analytics.bigdl.nn.abstractnn
+/**
+ * Module is the basic component of a neural network. It forward activities and backward gradients.
+ * Modules can connect to others to construct a complex neural network.
+ *
+ * @tparam A Input data type
+ * @tparam B Output data type
+ * @tparam T The numeric type in this module parameters.
+ */
+abstract class AbstractModule[A &lt;: Activity: ClassTag, B &lt;: Activity: ClassTag, T: ClassTag](
+  implicit ev: TensorNumeric[T]) extends Serializable with InferShape
+</code></pre>
+
+<p>这是个泛型类，<code>Abstract[A,B,T]</code>，有3个参数<code>A,B,T</code>，<code>A</code>是输入的类型，<code>B</code>是输出的类型，都要求是<code>Activity</code>的子类，然后<code>T</code>是此Module使用参数的类型，可以是<code>Double</code>或者<code>Float</code>.</p>
+<p>一个<code>Module</code>的核心功能肯定是前向传播进行推断和反向传播更新梯度, 分别对应<code>forward</code>和<code>backward</code>方法, 这两个方法是给出具体实现了的:</p>
+<pre><code class="scala">  /**
+   * Takes an input object, and computes the corresponding output of the module. After a forward,
+   * the output state variable should have been updated to the new value.
+   *
+   * @param input input data
+   * @return output data
+   */
+  final def forward(input: A): B = {
+    val before = System.nanoTime()
+    try {
+      updateOutput(input)
+    } catch {
+      case l: LayerException =&gt;
+        l.layerMsg = this.toString() + &quot;/&quot; + l.layerMsg
+        throw l
+      case e: Throwable =&gt;
+        throw new LayerException(this.toString(), e)
+    }
+    forwardTime += System.nanoTime() - before
+
+    output
+  }
+
+  /**
+   * Performs a back-propagation step through the module, with respect to the given input. In
+   * general this method makes the assumption forward(input) has been called before, with the same
+   * input. This is necessary for optimization reasons. If you do not respect this rule, backward()
+   * will compute incorrect gradients.
+   *
+   * @param input input data
+   * @param gradOutput gradient of next layer
+   * @return gradient corresponding to input data
+   */
+  def backward(input: A, gradOutput: B): A = {
+    val before = System.nanoTime()
+    updateGradInput(input, gradOutput)
+    accGradParameters(input, gradOutput)
+    backwardTime += System.nanoTime() - before
+
+    gradInput
+  }
+</code></pre>
+
+<p>暂时可以只关注<code>forward</code>方法, 可以发现它就是调用了<code>updateOutput(input)</code>, 然后做一些统计工作. </p>
+<pre><code class="scala">  /**
+   * Computes the output using the current parameter set of the class and input. This function
+   * returns the result which is stored in the output field.
+   *
+   * @param input
+   * @return
+   */
+  def updateOutput(input: A): B
+</code></pre>
+
+  <br>
+</div>
+
+<footer class="col-md-12 wm-page-content">
+  <p>Documentation built with <a href="http://www.mkdocs.org/">MkDocs</a> using <a href="https://github.com/gristlabs/mkdocs-windmill">Windmill</a> theme by Grist Labs.</p>
+</footer>
+
+</body>
+</html>
