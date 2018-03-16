@@ -1,6 +1,6 @@
 #!/bin/bash
 
-git add -A && git commit -m "update documents"
+git add -A && git commit -m "update documents" && git push
 
 mkdocs build && \
 cd site && \
