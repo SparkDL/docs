@@ -1,37 +1,7 @@
-BigDL的代码架构模仿了Torch，神经网络的构建以`Module`为核心，具体运算则以`Tensor`为单位执行。
-
-## 模型定义API
-BigDL支持2套模型定义API
-
-- Sequential
-- Functional
-
-对一个同样的例子：
-```
-Linear -> Sigmoid -> Softmax
-```
-
-采用Sequential的形式定义为：
-```scala
-val model = Sequential()
-model.add(Linear(...))
-model.add(Sigmoid())
-model.add(Softmax())
-```
-Functional的形式为：
-```scala
-val linear = Linear(...).inputs()
-val sigmoid = Sigmoid().inputs(linear)
-val softmax = Softmax().inputs(sigmoid)
-val model = Graph(Seq[linear], Seq[softmax])
-```
-
-后者的形式比较直观。
-
-## Module
+# Module
 `Module`是BigDL中网络构建的基本单位，网络的每一种层都实现为一个`Module`。
 
-### AbstractModule
+## AbstractModule
 `com.intel.analytics.bigdl.nn.abstractnn`包内定义了`AbstractModule`，它是所有`Module`的原始基类：
 ```scala
 package com.intel.analytics.bigdl.nn.abstractnn
@@ -110,7 +80,7 @@ abstract class AbstractModule[A <: Activity: ClassTag, B <: Activity: ClassTag, 
 
 这是个抽象方法, 留给子类去实现. 我们继承这个类然后实现这个方法即可实现前向传播进行inference了.
 
-### TensorModule
+## TensorModule
 
 上面定义了Module的抽象类, 然后BigDL具体使用的是它的一个子类`TensorModule[T]`, 分别将`AbstractModule`的三个参数类型设为`Tensor[T], Tensor[T], T`, 也就是输入输出都是`Tensor`类型, 这样就可以把具体的计算过程全部使用`Tensor`的运算实现.
 ```scala
@@ -124,7 +94,7 @@ abstract class TensorModule[T: ClassTag]
   (implicit ev: TensorNumeric[T]) extends AbstractModule[Tensor[T], Tensor[T], T]
 ```
 
-### 例子
+## 例子
 看一个最简单的例子, `Add`层, 它简单的将每个输入各加上一个值: 
 ```scala
 /**
