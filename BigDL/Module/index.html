@@ -11,7 +11,7 @@
     
     <link rel="shortcut icon" href="../../img/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
-    <title>整体架构 - SparkDL</title>
+    <title>Module - SparkDL</title>
     <link href="../../css/bootstrap-3.3.7.min.css" rel="stylesheet">
     <link href="../../css/font-awesome-4.7.0.css" rel="stylesheet">
     <link href="../../css/base.css" rel="stylesheet">
@@ -32,8 +32,6 @@
       var is_top_frame = false;
         
         var pageToc = [
-          {title: "\u6a21\u578b\u5b9a\u4e49API", url: "#api", children: [
-          ]},
           {title: "Module", url: "#module", children: [
               {title: "AbstractModule", url: "#abstractmodule" },
               {title: "TensorModule", url: "#tensormodule" },
@@ -57,35 +55,9 @@ if (is_top_frame) { $('body').addClass('wm-top-page'); }
 <div class="container-fluid wm-page-content">
     
 
-    <p>BigDL的代码架构模仿了Torch，神经网络的构建以<code>Module</code>为核心，具体运算则以<code>Tensor</code>为单位执行。</p>
-<h2 id="api">模型定义API</h2>
-<p>BigDL支持2套模型定义API</p>
-<ul>
-<li>Sequential</li>
-<li>Functional</li>
-</ul>
-<p>对一个同样的例子：</p>
-<pre><code>Linear -&gt; Sigmoid -&gt; Softmax
-</code></pre>
-
-<p>采用Sequential的形式定义为：</p>
-<pre><code class="scala">val model = Sequential()
-model.add(Linear(...))
-model.add(Sigmoid())
-model.add(Softmax())
-</code></pre>
-
-<p>Functional的形式为：</p>
-<pre><code class="scala">val linear = Linear(...).inputs()
-val sigmoid = Sigmoid().inputs(linear)
-val softmax = Softmax().inputs(sigmoid)
-val model = Graph(Seq[linear], Seq[softmax])
-</code></pre>
-
-<p>后者的形式比较直观。</p>
-<h2 id="module">Module</h2>
+    <h1 id="module">Module</h1>
 <p><code>Module</code>是BigDL中网络构建的基本单位，网络的每一种层都实现为一个<code>Module</code>。</p>
-<h3 id="abstractmodule">AbstractModule</h3>
+<h2 id="abstractmodule">AbstractModule</h2>
 <p><code>com.intel.analytics.bigdl.nn.abstractnn</code>包内定义了<code>AbstractModule</code>，它是所有<code>Module</code>的原始基类：</p>
 <pre><code class="scala">package com.intel.analytics.bigdl.nn.abstractnn
 /**
@@ -157,7 +129,7 @@ abstract class AbstractModule[A &lt;: Activity: ClassTag, B &lt;: Activity: Clas
 </code></pre>
 
 <p>这是个抽象方法, 留给子类去实现. 我们继承这个类然后实现这个方法即可实现前向传播进行inference了.</p>
-<h3 id="tensormodule">TensorModule</h3>
+<h2 id="tensormodule">TensorModule</h2>
 <p>上面定义了Module的抽象类, 然后BigDL具体使用的是它的一个子类<code>TensorModule[T]</code>, 分别将<code>AbstractModule</code>的三个参数类型设为<code>Tensor[T], Tensor[T], T</code>, 也就是输入输出都是<code>Tensor</code>类型, 这样就可以把具体的计算过程全部使用<code>Tensor</code>的运算实现.</p>
 <pre><code class="scala">/**
  * [[TensorModule]] is an abstract sub-class of [[AbstractModule]], whose
@@ -169,7 +141,7 @@ abstract class TensorModule[T: ClassTag]
   (implicit ev: TensorNumeric[T]) extends AbstractModule[Tensor[T], Tensor[T], T]
 </code></pre>
 
-<h3 id="_1">例子</h3>
+<h2 id="_1">例子</h2>
 <p>看一个最简单的例子, <code>Add</code>层, 它简单的将每个输入各加上一个值: </p>
 <pre><code class="scala">/**
  * adds a bias term to input data ;
