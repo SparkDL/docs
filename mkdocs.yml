@@ -6,7 +6,6 @@ extra:
 pages:
     - Home: index.md
     - BigDL代码分析: 
-        - BigDL/模型定义.md
         - BigDL/Module.md
         - BigDL/Graph.md
 theme: windmill
