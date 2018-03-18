@@ -1,7 +1,15 @@
 # Module
-`Module`是BigDL中网络构建的基本单位，网络的每一种层都实现为一个`Module`。
+`Module`是BigDL中网络构建的基本单位，网络的每一种层都实现为一个`Module`.
 
-![class-structure](images/class-structure.png)
+首先来看一下Module的继承体系.
+
+![class-structure](/images/class-structure.png)
+
+说明一下, 最底层的是`AbstractModule`抽象类, 这是所有`Module`的基类.
+
+然后是它的一个子类`TensorModule`, 这也是一个抽象类, 大部分层都是继承这个类, 比如全连接, 卷积等.
+
+
 
 ## AbstractModule
 `com.intel.analytics.bigdl.nn.abstractnn`包内定义了`AbstractModule`，它是所有`Module`的原始基类：

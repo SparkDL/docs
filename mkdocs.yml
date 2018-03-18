@@ -1,4 +1,6 @@
 site_name: SparkDL
+repo_name: 'Fork on GitHub '
+repo_url: 'https://github.com/intel-analytics/BigDL'
 extra:
     version: latest
     article_nav_top: false
