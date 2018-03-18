@@ -3,7 +3,7 @@
 
 首先来看一下Module的继承体系.
 
-![class-structure](/images/class-structure.png)
+![class-structure](images/class-structure.png)
 
 说明一下, 最底层的是`AbstractModule`抽象类, 这是所有`Module`的基类.
 
