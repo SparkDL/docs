@@ -1,6 +1,8 @@
 # Module
 `Module`是BigDL中网络构建的基本单位，网络的每一种层都实现为一个`Module`。
 
+![class-structure](images/class-structure.png)
+
 ## AbstractModule
 `com.intel.analytics.bigdl.nn.abstractnn`包内定义了`AbstractModule`，它是所有`Module`的原始基类：
 ```scala
