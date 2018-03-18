@@ -33,6 +33,7 @@
         
         var pageToc = [
           {title: "Module", url: "#module", children: [
+              {title: "Container, Sequenstial, Graph", url: "#container-sequenstial-graph" },
               {title: "AbstractModule", url: "#abstractmodule" },
               {title: "TensorModule", url: "#tensormodule" },
               {title: "\u4f8b\u5b50", url: "#_1" },
@@ -56,8 +57,36 @@ if (is_top_frame) { $('body').addClass('wm-top-page'); }
     
 
     <h1 id="module">Module</h1>
-<p><code>Module</code>是BigDL中网络构建的基本单位，网络的每一种层都实现为一个<code>Module</code>。</p>
-<p><img alt="class-structure" src="../images/class-structure.png" /></p>
+<p><code>Module</code>是BigDL中网络构建的基本单位，网络的每一种层都实现为一个<code>Module</code>.</p>
+<p>首先来看一下Module的继承体系.</p>
+<p><img alt="class-structure" src="../../images/class-structure.png" /></p>
+<p>说明一下, 最底层的是<code>AbstractModule</code>抽象类, 这是所有<code>Module</code>的基类.</p>
+<p>然后是它的一个子类<code>TensorModule</code>, 这也是一个抽象类, 大部分层都是继承这个类, 比如全连接, 卷积等.</p>
+<p>另外它还有几个子类</p>
+<ul>
+<li><code>Container</code> Module的容器, 可以理解为把多个Module打包成一个</li>
+<li><code>Cell</code> 为循环神经元设计的, 比如RNNCell, LSTMCell都继承自这个类</li>
+<li><code>CAddTable</code>, <code>CSubTable</code>... 这是其他的多输入多输出的比较特殊的Module</li>
+</ul>
+<h2 id="container-sequenstial-graph">Container, Sequenstial, Graph</h2>
+<p>请参考 <a href="https://bigdl-project.github.io/0.4.0/#APIGuide/Layers/Containers/">Containers</a></p>
+<p>注意这里有两个比较特殊的容器, <code>Sequenstial</code>和<code>Graph</code>, 这是我们构建模型的顶层API.</p>
+<p>再来回顾一下<a href="../模型定义/">模型定义</a>的两种方式.</p>
+<p>采用Sequential的形式定义为：</p>
+<pre><code class="scala">val model = Sequential()
+model.add(Linear(...))
+model.add(Sigmoid())
+model.add(Softmax())
+</code></pre>
+
+<p>Functional的形式为：</p>
+<pre><code class="scala">val linear = Linear(...).inputs()
+val sigmoid = Sigmoid().inputs(linear)
+val softmax = Softmax().inputs(sigmoid)
+val model = Graph(Seq[linear], Seq[softmax])
+</code></pre>
+
+<p>前者是向<code>Sequential</code>容器内不断添加新的层, 后者则是使用各模块本身的<code>inputs</code>方法连接起来, 最后使用输入节点和输出节点构建一个<code>Graph</code>.</p>
 <h2 id="abstractmodule">AbstractModule</h2>
 <p><code>com.intel.analytics.bigdl.nn.abstractnn</code>包内定义了<code>AbstractModule</code>，它是所有<code>Module</code>的原始基类：</p>
 <pre><code class="scala">package com.intel.analytics.bigdl.nn.abstractnn
