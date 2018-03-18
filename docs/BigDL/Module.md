@@ -9,7 +9,35 @@
 
 然后是它的一个子类`TensorModule`, 这也是一个抽象类, 大部分层都是继承这个类, 比如全连接, 卷积等.
 
+另外它还有几个子类
 
+- `Container` Module的容器, 可以理解为把多个Module打包成一个
+- `Cell` 为循环神经元设计的, 比如RNNCell, LSTMCell都继承自这个类
+- `CAddTable`, `CSubTable`... 这是其他的多输入多输出的比较特殊的Module
+
+## Container, Sequenstial, Graph
+请参考 [Containers](https://bigdl-project.github.io/0.4.0/#APIGuide/Layers/Containers/)
+
+注意这里有两个比较特殊的容器, `Sequenstial`和`Graph`, 这是我们构建模型的顶层API.
+
+再来回顾一下[模型定义](模型定义.md)的两种方式.
+
+采用Sequential的形式定义为：
+```scala
+val model = Sequential()
+model.add(Linear(...))
+model.add(Sigmoid())
+model.add(Softmax())
+```
+Functional的形式为：
+```scala
+val linear = Linear(...).inputs()
+val sigmoid = Sigmoid().inputs(linear)
+val softmax = Softmax().inputs(sigmoid)
+val model = Graph(Seq[linear], Seq[softmax])
+```
+
+前者是向`Sequential`容器内不断添加新的层, 后者则是使用各模块本身的`inputs`方法连接起来, 最后使用输入节点和输出节点构建一个`Graph`.
 
 ## AbstractModule
 `com.intel.analytics.bigdl.nn.abstractnn`包内定义了`AbstractModule`，它是所有`Module`的原始基类：
