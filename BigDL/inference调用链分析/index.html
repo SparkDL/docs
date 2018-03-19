@@ -11,7 +11,7 @@
     
     <link rel="shortcut icon" href="../../img/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
-    <title>Inference调用链分析 - SparkDL</title>
+    <title>inference调用链分析 - SparkDL</title>
     <link href="../../css/bootstrap-3.3.7.min.css" rel="stylesheet">
     <link href="../../css/font-awesome-4.7.0.css" rel="stylesheet">
     <link href="../../css/base.css" rel="stylesheet">
@@ -32,6 +32,9 @@
       var is_top_frame = false;
         
         var pageToc = [
+          {title: "inference\u8c03\u7528\u94fe\u5206\u6790", url: "#inference", children: [
+              {title: "lenet\u6a21\u578b\u5b9a\u4e49", url: "#lenet" },
+          ]},
         ];
 
     </script>
@@ -50,7 +53,44 @@ if (is_top_frame) { $('body').addClass('wm-top-page'); }
 <div class="container-fluid wm-page-content">
     
 
-    
+    <h1 id="inference">inference调用链分析</h1>
+<p>以最简单的lenet5为例, 探究inference过程的调用链</p>
+<p>示例代码位于<code>spark/dl/src/main/scala/com/pzque/sparkdl/lenet</code>, 模型的checkpoint已保存好, 下载好数据后可以直接运行'Test.scala'查看测试集上的推断准确率.</p>
+<h2 id="lenet">lenet模型定义</h2>
+<pre><code class="scala">object LeNet5 {
+  def apply(classNum: Int): Module[Float] = {
+    val model = Sequential()
+    model.add(Reshape(Array(1, 28, 28)))
+      .add(SpatialConvolution(1, 6, 5, 5).setName(&quot;conv1_5x5&quot;))
+      .add(Tanh())
+      .add(SpatialMaxPooling(2, 2, 2, 2))
+      .add(Tanh())
+      .add(SpatialConvolution(6, 12, 5, 5).setName(&quot;conv2_5x5&quot;))
+      .add(SpatialMaxPooling(2, 2, 2, 2))
+      .add(Reshape(Array(12 * 4 * 4)))
+      .add(Linear(12 * 4 * 4, 100).setName(&quot;fc1&quot;))
+      .add(Tanh())
+      .add(Linear(100, classNum).setName(&quot;fc2&quot;))
+      .add(LogSoftMax())
+  }
+  def graph(classNum: Int): Module[Float] = {
+    val input = Reshape(Array(1, 28, 28)).inputs()
+    val conv1 = SpatialConvolution(1, 6, 5, 5).setName(&quot;conv1_5x5&quot;).inputs(input)
+    val tanh1 = Tanh().inputs(conv1)
+    val pool1 = SpatialMaxPooling(2, 2, 2, 2).inputs(tanh1)
+    val tanh2 = Tanh().inputs(pool1)
+    val conv2 = SpatialConvolution(6, 12, 5, 5).setName(&quot;conv2_5x5&quot;).inputs(tanh2)
+    val pool2 = SpatialMaxPooling(2, 2, 2, 2).inputs(conv2)
+    val reshape = Reshape(Array(12 * 4 * 4)).inputs(pool2)
+    val fc1 = Linear(12 * 4 * 4, 100).setName(&quot;fc1&quot;).inputs(reshape)
+    val tanh3 = Tanh().inputs(fc1)
+    val fc2 = Linear(100, classNum).setName(&quot;fc2&quot;).inputs(tanh3)
+    val output = LogSoftMax().inputs(fc2)
+
+    Graph(input, output)
+  }
+}
+</code></pre>
 
   <br>
 </div>
