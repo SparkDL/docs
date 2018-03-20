@@ -246,10 +246,10 @@ dataset.mapPartitions(partition =&gt; {
 <p>前面说了在前2步广播了几个变量, 这里就是在slave上访问那几个变量, <code>localModel</code>是模型, <code>localMethod</code>是那个统计方法数组,
 <code>localTransformer</code>就是把数据转成一个个batch的对象.</p>
 <p>然后就是调用这个<code>localTransformer</code>将数据集转成batch.</p>
-<p>后面的代码, 除了这一句:
- <code>scala
-val output = localModel.forward(batch.getInput())</code>
-是运行模型inference外, 其他都是在收集统计结果, 可以不必关注.</p>
+<p>后面的代码, 除了这一句:</p>
+<p><code>scala
+val output = localModel.forward(batch.getInput())</code></p>
+<p>是运行模型inference外, 其他都是在收集统计结果, 可以不必关注.</p>
 <p>所以我们后面至于关注模型如何forward.</p>
 <p>这个留在下一节 <a href="../forward/">forward</a>详述.</p>
 
