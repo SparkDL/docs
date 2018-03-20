@@ -53,6 +53,7 @@ object LeNet5 {
 
 ## inference调用链
 infrence的核心代码如下: 
+
 ```scala
       // 加载测试数据, 调用SparkContext类的parallize方法将其转为RDD
       val rddData: RDD[ByteRecord] = sc.parallelize(load(validationData, validationLabel), partitionNum)
@@ -85,6 +86,7 @@ model.evaluate(evaluationSet,
 ```
 
 找到它的定义, 位于`AbstractModule`类:
+
 ```scala
   /**
    * use ValidationMethod to evaluate module on the given rdd dataset
@@ -168,6 +170,7 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
 ```scala
     val modelBroad = ModelBroadcast[T]().broadcast(dataset.sparkContext, model.evaluate())
 ```
+
 这一句将模型拷贝到了每一个spark节点上, 让其都能访问到.
 
 **2.将vMethods和一个能将数据集转为一个个batch的transformer广播到各个节点**
@@ -214,15 +217,18 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
       val localMethod = otherBroad.value._1.map(_.clone())
       val localTransformer = otherBroad.value._2.cloneTransformer()
 ```
+
 前面说了在前2步广播了几个变量, 这里就是在slave上访问那几个变量, `localModel`是模型, `localMethod`是那个统计方法数组,
 `localTransformer`就是把数据转成一个个batch的对象.
 
  然后就是调用这个`localTransformer`将数据集转成batch.
  
  后面的代码, 除了这一句:
+ 
  ```scala
 val output = localModel.forward(batch.getInput())
 ```
+
 是运行模型inference外, 其他都是在收集统计结果, 可以不必关注.
 
 所以我们后面至于关注模型如何forward.
