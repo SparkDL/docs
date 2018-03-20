@@ -56,22 +56,22 @@ object LeNet5 {
 infrence的核心代码如下: 
 
 ```scala
-      // 加载测试数据, 调用SparkContext类的parallize方法将其转为RDD
-      val rddData: RDD[ByteRecord] = sc.parallelize(load(validationData, validationLabel), partitionNum)
+// 加载测试数据, 调用SparkContext类的parallize方法将其转为RDD
+val rddData: RDD[ByteRecord] = sc.parallelize(load(validationData, validationLabel), partitionNum)
 
-      // 定义一个数据预处理器, 将ByteRecord格式转为Sample[Float]
-      val transformer: Transformer[ByteRecord, Sample[Float]] =
-        BytesToGreyImg(28, 28) -> GreyImgNormalizer(testMean, testStd) -> GreyImgToSample()
+// 定义一个数据预处理器, 将ByteRecord格式转为Sample[Float]
+val transformer: Transformer[ByteRecord, Sample[Float]] =
+BytesToGreyImg(28, 28) -> GreyImgNormalizer(testMean, testStd) -> GreyImgToSample()
 
-      // 使用transformer构造验证集RDD
-      val evaluationSet: RDD[Sample[Float]] = transformer(rddData)
+// 使用transformer构造验证集RDD
+val evaluationSet: RDD[Sample[Float]] = transformer(rddData)
 
-      // 加载模型
-      val model = Module.load[Float](param.model)
+// 加载模型
+val model = Module.load[Float](param.model)
 
-      // 执行模型, 获取结果
-      val result = model.evaluate(evaluationSet,
-        Array(new Top1Accuracy[Float]), Some(param.batchSize))
+// 执行模型, 获取结果
+val result = model.evaluate(evaluationSet,
+Array(new Top1Accuracy[Float]), Some(param.batchSize))
 ```
 
 前面的一堆都是使用spark的RDD进行数据预处理与转换, 最后得到`evaluationSet`, 也是一个RDD, 元素是`Sample[Flaot]`的类型.
@@ -89,21 +89,21 @@ model.evaluate(evaluationSet,
 找到它的定义, 位于`AbstractModule`类:
 
 ```scala
-  /**
-   * use ValidationMethod to evaluate module on the given rdd dataset
-   * @param dataset dataset for test
-   * @param vMethods validation methods
-   * @param batchSize total batchsize of all partitions,
-   *                  optional param and default 4 * partitionNum of dataset
-   * @return
-   */
-  final def evaluate(
-    dataset: RDD[Sample[T]],
-    vMethods: Array[ValidationMethod[T]],
-    batchSize: Option[Int] = None
-  ): Array[(ValidationResult, ValidationMethod[T])] = {
-    Evaluator(this).test(dataset, vMethods, batchSize)
-  }
+/**
+* use ValidationMethod to evaluate module on the given rdd dataset
+* @param dataset dataset for test
+* @param vMethods validation methods
+* @param batchSize total batchsize of all partitions,
+*                  optional param and default 4 * partitionNum of dataset
+* @return
+*/
+final def evaluate(
+dataset: RDD[Sample[T]],
+vMethods: Array[ValidationMethod[T]],
+batchSize: Option[Int] = None
+): Array[(ValidationResult, ValidationMethod[T])] = {
+Evaluator(this).test(dataset, vMethods, batchSize)
+}
 ```
 
 
@@ -117,7 +117,7 @@ model.evaluate(evaluationSet,
 
 ## Evaluator
 
- ```scala
+```scala
 /**
  * model evaluator
  * @param model model to be evaluated
@@ -136,7 +136,7 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
   def test(dataset: RDD[Sample[T]],
    vMethods: Array[ValidationMethod[T]],
    batchSize: Option[Int] = None): Array[(ValidationResult, ValidationMethod[T])] = {
-
+   
     val modelBroad = ModelBroadcast[T]().broadcast(dataset.sparkContext, model.evaluate())
     val partitionNum = dataset.partitions.length
 

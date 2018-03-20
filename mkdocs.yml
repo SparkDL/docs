@@ -1,6 +1,6 @@
 site_name: SparkDL
-repo_name: 'Fork on GitHub '
-repo_url: 'https://github.com/SparkDL'
+repo_name: 'SparkDL'
+repo_url: 'https://github.com/SparkDL/docs'
 extra:
     version: latest
     article_nav_top: false
@@ -15,4 +15,4 @@ pages:
         - BigDL/inference调用链分析.md
         - BigDL/forward.md
         - BigDL/Tensor运算.md
-theme: windmill
+theme: cinder
