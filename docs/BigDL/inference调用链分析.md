@@ -169,7 +169,7 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
 **1.将模型广播到各个节点**
 
 ```scala
-    val modelBroad = ModelBroadcast[T]().broadcast(dataset.sparkContext, model.evaluate())
+val modelBroad = ModelBroadcast[T]().broadcast(dataset.sparkContext, model.evaluate())
 ```
 
 这一句将模型拷贝到了每一个spark节点上, 让其都能访问到.
@@ -177,11 +177,11 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
 **2.将vMethods和一个能将数据集转为一个个batch的transformer广播到各个节点**
 
 ```scala
-    val otherBroad = dataset.sparkContext.broadcast
-    (
-     vMethods, 
-     SampleToMiniBatch(batchSize = totalBatch, partitionNum = Some(partitionNum))
-     )
+val otherBroad = dataset.sparkContext.broadcast
+(
+ vMethods, 
+ SampleToMiniBatch(batchSize = totalBatch, partitionNum = Some(partitionNum))
+ )
 ```
 这里注意一下一个scala语法的坑, 事实上`broadcast`函数只能接受一个参数, 但是scala支持函数不带括号的调用语法,
 比如`a.add b`等价于`a.add(b)`, 所以这里的参数其实是一个Tuple: `(vMethods, SampleToMiniBatch(...))`.
@@ -191,20 +191,20 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
 代码就是这一堆:
 
 ```scala
-    dataset.mapPartitions(partition => {
-      val localModel = modelBroad.value()
-      val localMethod = otherBroad.value._1.map(_.clone())
-      val localTransformer = otherBroad.value._2.cloneTransformer()
-      val miniBatch = localTransformer(partition)
-      miniBatch.map(batch => {
-        val output = localModel.forward(batch.getInput())
-        localMethod.map(validation => {
-          validation(output, batch.getTarget())
-        })
-      })
-    }).reduce((left, right) => {
-        left.zip(right).map { case (l, r) => l + r }
-    }).zip(vMethods)
+dataset.mapPartitions(partition => {
+  val localModel = modelBroad.value()
+  val localMethod = otherBroad.value._1.map(_.clone())
+  val localTransformer = otherBroad.value._2.cloneTransformer()
+  val miniBatch = localTransformer(partition)
+  miniBatch.map(batch => {
+    val output = localModel.forward(batch.getInput())
+    localMethod.map(validation => {
+      validation(output, batch.getTarget())
+    })
+  })
+}).reduce((left, right) => {
+    left.zip(right).map { case (l, r) => l + r }
+}).zip(vMethods)
 ```
 
 先是最顶层的`mapPartitions`, 简单, spark的机制是一个节点保存一个partition, 所以呢这个就是在每个节点执行一遍后面的那个函数`partition=>{...}`.
@@ -214,9 +214,9 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
 继续看函数体, 前3句:
 
 ```scala
-      val localModel = modelBroad.value()
-      val localMethod = otherBroad.value._1.map(_.clone())
-      val localTransformer = otherBroad.value._2.cloneTransformer()
+  val localModel = modelBroad.value()
+  val localMethod = otherBroad.value._1.map(_.clone())
+  val localTransformer = otherBroad.value._2.cloneTransformer()
 ```
 
 前面说了在前2步广播了几个变量, 这里就是在slave上访问那几个变量, `localModel`是模型, `localMethod`是那个统计方法数组,
