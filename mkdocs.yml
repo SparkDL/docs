@@ -13,4 +13,5 @@ pages:
         - BigDL/Module.md
         - BigDL/Transformer.md
         - BigDL/inference调用链分析.md
+        - BigDL/Tensor运算.md
 theme: windmill

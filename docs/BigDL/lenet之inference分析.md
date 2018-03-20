@@ -111,6 +111,7 @@ model.evaluate(evaluationSet,
 然后最后执行模型的代码就是`Evaluator(this).test(dataset, vMethods, batchSize)`了, 下面来看一下它的实现.
 
 ## Evaluator
+
  ```scala
 /**
  * model evaluator
@@ -156,4 +157,7 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
 }
 ```
 
-上面是这个类的全部代码
+上面是这个类的全部代码, 这个类也只是在全局做调度, 很简单. 具体的执行逻辑当然还是在`AbstractModule`的实现类里定义.
+
+
+
