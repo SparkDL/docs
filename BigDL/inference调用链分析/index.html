@@ -121,13 +121,14 @@ if (is_top_frame) { $('body').addClass('wm-top-page'); }
 </code></pre>
 
 <p>前面的一堆都是使用spark的RDD进行数据预处理与转换, 最后得到<code>evaluationSet</code>, 也是一个RDD, 元素是<code>Sample[Flaot]</code>的类型.</p>
+<p>我们看到其先是通过<code>Module.load[Float]</code>将模型加载进来, 然后利用模型执行evaluate操作.</p>
 <p>我们需要关注这一句:</p>
 <pre><code class="scala">model.evaluate(evaluationSet,
         Array(new Top1Accuracy[Float]), 
         Some(param.batchSize))
 </code></pre>
 
-<p>找到它的定义:</p>
+<p>找到它的定义, 位于<code>AbstractModule</code>类:</p>
 <pre><code class="scala">  /**
    * use ValidationMethod to evaluate module on the given rdd dataset
    * @param dataset dataset for test
@@ -193,9 +194,64 @@ dataset.mapPartitions(partition =&gt; {
 }).zip(vMethods)
 </code></pre>
 <p>}
-}
-```</p>
-<p>上面是这个类的全部代码</p>
+}</p>
+<pre><code>
+上面是这个类的全部代码, 这个类也只是在全局做调度, 很简单. 具体的执行逻辑当然还是在`AbstractModule`的实现类里定义.
+
+如代码所示, 在一个RDD数据集上执行模型有如下几步:
+
+**1.将模型广播到各个节点**
+
+```scala
+    val modelBroad = ModelBroadcast[T]().broadcast(dataset.sparkContext, model.evaluate())
+</code></pre>
+
+<p>这一句将模型拷贝到了每一个spark节点上, 让其都能访问到.</p>
+<p><strong>2.将vMethods和一个能将数据集转为一个个batch的transformer广播到各个节点</strong></p>
+<pre><code class="scala">    val otherBroad = dataset.sparkContext.broadcast
+    (
+     vMethods, 
+     SampleToMiniBatch(batchSize = totalBatch, partitionNum = Some(partitionNum))
+     )
+</code></pre>
+
+<p>这里注意一下一个scala语法的坑, 事实上<code>broadcast</code>函数只能接受一个参数, 但是scala支持函数不带括号的调用语法,
+比如<code>a.add b</code>等价于<code>a.add(b)</code>, 所以这里的参数其实是一个Tuple: <code>(vMethods, SampleToMiniBatch(...))</code>.</p>
+<p><strong>3.在每个节点执行一遍模型然后收集结果</strong></p>
+<p>代码就是这一堆:</p>
+<pre><code class="scala">    dataset.mapPartitions(partition =&gt; {
+      val localModel = modelBroad.value()
+      val localMethod = otherBroad.value._1.map(_.clone())
+      val localTransformer = otherBroad.value._2.cloneTransformer()
+      val miniBatch = localTransformer(partition)
+      miniBatch.map(batch =&gt; {
+        val output = localModel.forward(batch.getInput())
+        localMethod.map(validation =&gt; {
+          validation(output, batch.getTarget())
+        })
+      })
+    }).reduce((left, right) =&gt; {
+        left.zip(right).map { case (l, r) =&gt; l + r }
+    }).zip(vMethods)
+</code></pre>
+
+<p>先是最顶层的<code>mapPartitions</code>, 简单, spark的机制是一个节点保存一个partition, 所以呢这个就是在每个节点执行一遍后面的那个函数<code>partition=&gt;{...}</code>.</p>
+<p><code>partition</code>这个参数就是一个数据分区了.</p>
+<p>继续看函数体, 前3句:</p>
+<pre><code class="scala">      val localModel = modelBroad.value()
+      val localMethod = otherBroad.value._1.map(_.clone())
+      val localTransformer = otherBroad.value._2.cloneTransformer()
+</code></pre>
+
+<p>前面说了在前2步广播了几个变量, 这里就是在slave上访问那几个变量, <code>localModel</code>是模型, <code>localMethod</code>是那个统计方法数组,
+<code>localTransformer</code>就是把数据转成一个个batch的对象.</p>
+<p>然后就是调用这个<code>localTransformer</code>将数据集转成batch.</p>
+<p>后面的代码, 除了这一句:
+ <code>scala
+val output = localModel.forward(batch.getInput())</code>
+是运行模型inference外, 其他都是在收集统计结果, 可以不必关注.</p>
+<p>所以我们后面至于关注模型如何forward.</p>
+<p>这个留在下一节 <a href="../forward/">forward</a>详述.</p>
 
   <br>
 </div>
