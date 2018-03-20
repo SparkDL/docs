@@ -2,9 +2,19 @@
 
 以最简单的lenet5为例, 探究inference过程的调用链
 
-示例代码位于`spark/dl/src/main/scala/com/pzque/sparkdl/lenet`, 模型的checkpoint已保存好, 下载好数据后可以直接运行'Test.scala'查看测试集上的推断准确率.
+示例代码位于'spark/dl/src/main/scala/com/pzque/sparkdl/lenet', 模型的checkpoint已保存好, 下载好数据后可以直接运行'Test.scala'查看测试集上的推断准确率.
 
 ## lenet模型定义
+首先看一下lenet模型的定义.
+
+`apply`和`graph`函数分别使用了Sequential和Graph的API定义模型, 二者是等价的.
+
+模型的结构非常简单, 在测试集上可以达到98.93%的准确率.
+
+```scala
+28*28 -> (Conv -> MaxPooling)*2 -> (FullConnected)*2 -> LogSoftMax
+``` 
+
 ```scala
 object LeNet5 {
   def apply(classNum: Int): Module[Float] = {
@@ -40,3 +50,110 @@ object LeNet5 {
   }
 }
 ```
+
+## inference调用链
+infrence的核心代码如下: 
+```scala
+      // 加载测试数据, 调用SparkContext类的parallize方法将其转为RDD
+      val rddData: RDD[ByteRecord] = sc.parallelize(load(validationData, validationLabel), partitionNum)
+
+      // 定义一个数据预处理器, 将ByteRecord格式转为Sample[Float]
+      val transformer: Transformer[ByteRecord, Sample[Float]] =
+        BytesToGreyImg(28, 28) -> GreyImgNormalizer(testMean, testStd) -> GreyImgToSample()
+
+      // 使用transformer构造验证集RDD
+      val evaluationSet: RDD[Sample[Float]] = transformer(rddData)
+
+      // 加载模型
+      val model = Module.load[Float](param.model)
+
+      // 执行模型, 获取结果
+      val result = model.evaluate(evaluationSet,
+        Array(new Top1Accuracy[Float]), Some(param.batchSize))
+```
+
+前面的一堆都是使用spark的RDD进行数据预处理与转换, 最后得到`evaluationSet`, 也是一个RDD, 元素是`Sample[Flaot]`的类型.
+
+我们需要关注这一句:
+
+```scala
+model.evaluate(evaluationSet,
+        Array(new Top1Accuracy[Float]), 
+        Some(param.batchSize))
+```
+
+找到它的定义:
+```scala
+  /**
+   * use ValidationMethod to evaluate module on the given rdd dataset
+   * @param dataset dataset for test
+   * @param vMethods validation methods
+   * @param batchSize total batchsize of all partitions,
+   *                  optional param and default 4 * partitionNum of dataset
+   * @return
+   */
+  final def evaluate(
+    dataset: RDD[Sample[T]],
+    vMethods: Array[ValidationMethod[T]],
+    batchSize: Option[Int] = None
+  ): Array[(ValidationResult, ValidationMethod[T])] = {
+    Evaluator(this).test(dataset, vMethods, batchSize)
+  }
+```
+
+
+三个参数,
+
+- `dataset`: 是你要运行模型的数据集
+- `vMethods`: 是最后模型运行完成运行的一些统计工作, 比如这里的Top1Accuracy就是统计一下准确率 
+- `batchSize`: 注意这个不是机器学习的那个batchsize(每个batch的大小), 而是将全部的数据集分成多少batch
+
+然后最后执行模型的代码就是`Evaluator(this).test(dataset, vMethods, batchSize)`了, 下面来看一下它的实现.
+
+## Evaluator
+ ```scala
+/**
+ * model evaluator
+ * @param model model to be evaluated
+ */
+class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: TensorNumeric[T])
+  extends Serializable {
+
+  private val batchPerPartition = 4
+
+  /**
+   * Applies ValidationMethod to the model and rdd dataset.
+   * @param vMethods
+   * @param batchSize total batchsize
+   * @return
+   */
+  def test(dataset: RDD[Sample[T]],
+   vMethods: Array[ValidationMethod[T]],
+   batchSize: Option[Int] = None): Array[(ValidationResult, ValidationMethod[T])] = {
+
+    val modelBroad = ModelBroadcast[T]().broadcast(dataset.sparkContext, model.evaluate())
+    val partitionNum = dataset.partitions.length
+
+    val totalBatch = batchSize.getOrElse(batchPerPartition * partitionNum)
+    val otherBroad = dataset.sparkContext.broadcast(vMethods, SampleToMiniBatch(
+      batchSize = totalBatch, partitionNum = Some(partitionNum)))
+
+    dataset.mapPartitions(partition => {
+      val localModel = modelBroad.value()
+      val localMethod = otherBroad.value._1.map(_.clone())
+      val localTransformer = otherBroad.value._2.cloneTransformer()
+      val miniBatch = localTransformer(partition)
+      miniBatch.map(batch => {
+        val output = localModel.forward(batch.getInput())
+        localMethod.map(validation => {
+          validation(output, batch.getTarget())
+        })
+      })
+    }).reduce((left, right) => {
+        left.zip(right).map { case (l, r) => l + r }
+    }).zip(vMethods)
+  }
+}
+```
+
+上面是这个类的全部代码
