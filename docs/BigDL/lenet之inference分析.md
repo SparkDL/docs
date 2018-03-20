@@ -74,6 +74,8 @@ infrence的核心代码如下:
 
 前面的一堆都是使用spark的RDD进行数据预处理与转换, 最后得到`evaluationSet`, 也是一个RDD, 元素是`Sample[Flaot]`的类型.
 
+我们看到其先是通过`Module.load[Float]`将模型加载进来, 然后利用模型执行evaluate操作.
+
 我们需要关注这一句:
 
 ```scala
@@ -82,7 +84,7 @@ model.evaluate(evaluationSet,
         Some(param.batchSize))
 ```
 
-找到它的定义:
+找到它的定义, 位于`AbstractModule`类:
 ```scala
   /**
    * use ValidationMethod to evaluate module on the given rdd dataset
@@ -159,5 +161,73 @@ class Evaluator[T: ClassTag] private[optim](model: Module[T])(implicit ev: Tenso
 
 上面是这个类的全部代码, 这个类也只是在全局做调度, 很简单. 具体的执行逻辑当然还是在`AbstractModule`的实现类里定义.
 
+如代码所示, 在一个RDD数据集上执行模型有如下几步:
 
+**1.将模型广播到各个节点**
 
+```scala
+    val modelBroad = ModelBroadcast[T]().broadcast(dataset.sparkContext, model.evaluate())
+```
+这一句将模型拷贝到了每一个spark节点上, 让其都能访问到.
+
+**2.将vMethods和一个能将数据集转为一个个batch的transformer广播到各个节点**
+
+```scala
+    val otherBroad = dataset.sparkContext.broadcast
+    (
+     vMethods, 
+     SampleToMiniBatch(batchSize = totalBatch, partitionNum = Some(partitionNum))
+     )
+```
+这里注意一下一个scala语法的坑, 事实上`broadcast`函数只能接受一个参数, 但是scala支持函数不带括号的调用语法,
+比如`a.add b`等价于`a.add(b)`, 所以这里的参数其实是一个Tuple: `(vMethods, SampleToMiniBatch(...))`.
+
+**3.在每个节点执行一遍模型然后收集结果**
+
+代码就是这一堆:
+
+```scala
+    dataset.mapPartitions(partition => {
+      val localModel = modelBroad.value()
+      val localMethod = otherBroad.value._1.map(_.clone())
+      val localTransformer = otherBroad.value._2.cloneTransformer()
+      val miniBatch = localTransformer(partition)
+      miniBatch.map(batch => {
+        val output = localModel.forward(batch.getInput())
+        localMethod.map(validation => {
+          validation(output, batch.getTarget())
+        })
+      })
+    }).reduce((left, right) => {
+        left.zip(right).map { case (l, r) => l + r }
+    }).zip(vMethods)
+```
+
+先是最顶层的`mapPartitions`, 简单, spark的机制是一个节点保存一个partition, 所以呢这个就是在每个节点执行一遍后面的那个函数`partition=>{...}`.
+
+`partition`这个参数就是一个数据分区了.
+
+继续看函数体, 前3句:
+
+```scala
+      val localModel = modelBroad.value()
+      val localMethod = otherBroad.value._1.map(_.clone())
+      val localTransformer = otherBroad.value._2.cloneTransformer()
+```
+前面说了在前2步广播了几个变量, 这里就是在slave上访问那几个变量, `localModel`是模型, `localMethod`是那个统计方法数组,
+`localTransformer`就是把数据转成一个个batch的对象.
+
+ 然后就是调用这个`localTransformer`将数据集转成batch.
+ 
+ 后面的代码, 除了这一句:
+ ```scala
+val output = localModel.forward(batch.getInput())
+```
+是运行模型inference外, 其他都是在收集统计结果, 可以不必关注.
+
+所以我们后面至于关注模型如何forward.
+
+这个留在下一节 [forward](forward.md)详述.
+
+ 
+ 
