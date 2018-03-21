@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">  
     <link rel="shortcut icon" href="../../img/favicon.ico">
 
-    <title>Forward - SparkDL</title>
+    <title>forward - SparkDL</title>
 
     <link href="../../css/bootstrap-custom.min.css" rel="stylesheet">
     <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
@@ -105,7 +105,7 @@
                         
                             
 <li class="active">
-    <a href="./">Forward</a>
+    <a href="./">forward</a>
 </li>
 
                         
@@ -149,11 +149,176 @@
         
         <div class="col-md-3"><div class="bs-sidebar hidden-print affix well" role="complementary">
     <ul class="nav bs-sidenav">
+        <li class="first-level active"><a href="#forward">forward</a></li>
+            <li class="second-level"><a href="#sequential">Sequential</a></li>
+                
+                <li class="third-level"><a href="#_1">多分支</a></li>
+                <li class="third-level"><a href="#_2">多个输入</a></li>
+                <li class="third-level"><a href="#sequentialupdateoutput">Sequential.updateOutput</a></li>
+            <li class="second-level"><a href="#graph">Graph</a></li>
+                
+                <li class="third-level"><a href="#_3">多分支</a></li>
+                <li class="third-level"><a href="#_4">多个输入</a></li>
+                <li class="third-level"><a href="#staticgraphupdateoutput">StaticGraph.updateOutput</a></li>
     </ul>
 </div></div>
         <div class="col-md-9" role="main">
 
-</div>
+<h1 id="forward">forward</h1>
+<pre><code class="scala">/**
+* Takes an input object, and computes the corresponding output of the module. After a forward,
+* the output state variable should have been updated to the new value.
+*
+* @param input input data
+* @return output data
+*/
+final def forward(input: A): B = {
+val before = System.nanoTime()
+try {
+  updateOutput(input)
+} catch {
+  case l: LayerException =&gt;
+    l.layerMsg = this.toString() + &quot;/&quot; + l.layerMsg
+    throw l
+  case e: Throwable =&gt;
+    throw new LayerException(this.toString(), e)
+}
+forwardTime += System.nanoTime() - before
+
+output
+}
+</code></pre>
+
+<p>前面已经提到过了, <code>forward</code>是<code>AbstractModule</code>抽象类定义好的函数, 做一些统计时间的工作,
+实际执行计算的是<code>updateOutput</code>.</p>
+<pre><code class="scala">  /**
+   * Computes the output using the current parameter set of the class and input. This function
+   * returns the result which is stored in the output field.
+   *
+   * @param input
+   * @return
+   */
+  def updateOutput(input: A): B
+</code></pre>
+
+<p>这个函数没有实现, 需要由子类来实现. 而我们也已经提到过, 我们构建最顶层的API, <code>Sequential</code>和<code>Graph</code>都是<code>AbstractModule</code>的实现类.</p>
+<p>所以一个完整模型的<code>forward</code>过程, 最终执行的都是<code>Sequential.updateOutput</code>和<code>Graph.updateOutput</code>函数.</p>
+<p>让我们逐一来分析一下.</p>
+<p>在此之前可以先回顾一下<code>Module</code>的继承层次: <a href="../Module/">Module</a>.</p>
+<h2 id="sequential">Sequential</h2>
+<p>首先来回顾一下<code>Sequential</code>构建模型的流程 <a href="https://bigdl-project.github.io/master/#ProgrammingGuide/Model/Sequential/">Sequential API</a>
+, 下面是用<code>Sequential</code>构建模型的2个例子.</p>
+<h3 id="_1">多分支</h3>
+<p>结构:</p>
+<pre><code class="scala">Linear -&gt; ReLU --&gt; Linear -&gt; ReLU ----&gt; Add
+               |-&gt; Linear -&gt; ReLU --|
+
+</code></pre>
+
+<p>代码:</p>
+<pre><code class="scala">val branch1 = Sequential().add(Linear(...)).add(ReLU())
+val branch2 = Sequential().add(Linear(...)).add(ReLU())
+val branches = ConcatTable().add(branch1).add(branch2)
+
+val model = Sequential()
+model.add(Linear(...))
+model.add(ReLU())
+model.add(branches)
+model.add(CAddTable())
+</code></pre>
+
+<h3 id="_2">多个输入</h3>
+<pre><code class="scala">Linear -&gt; ReLU ----&gt; Add
+Linear -&gt; ReLU --|
+</code></pre>
+
+<pre><code class="scala">val model = Sequential()
+val branches = ParallelTable()
+val branch1 = Sequential().add(Linear(...)).add(ReLU())
+val branch2 = Sequential().add(Linear(...)).add(ReLU())
+branches.add(branch1).add(branch2)
+model.add(branches).add(CAddTable())
+</code></pre>
+
+<h3 id="sequentialupdateoutput">Sequential.updateOutput</h3>
+<p>可以发现, <code>Sequential</code>是按照线性的模式一层层的构建神经网络, 无论是怎样复杂的模型, 都可以放在容器里然后按照顺序连接起来, 
+所以在执行的时候就按照顺序<code>forward</code>一遍就可以了.</p>
+<p>看<code>udpateOutput</code>的代码:</p>
+<pre><code class="scala">@SerialVersionUID(5375403296928513267L)
+class Sequential[T: ClassTag]
+(implicit ev: TensorNumeric[T]) extends DynamicContainer[Activity, Activity, T] {
+
+  override def updateOutput(input: Activity): Activity = {
+    var i = 0
+    var result = input.asInstanceOf[Activity]
+    while (i &lt; modules.length) {
+      result = modules(i).forward(result)
+      i += 1
+    }
+
+    this.output = result
+    output
+  }
+}
+</code></pre>
+
+<p>非常之简单... 就是按顺序把每一层的模型都<code>forward</code>一遍.</p>
+<h2 id="graph">Graph</h2>
+<p><code>Graph</code>的情况复杂一点, 其又分成<code>StaticGraph</code>和<code>DynamicGraph</code>, 暂时没用到<code>DynamicGraph</code>, 只看<code>StaticGraph</code>吧.</p>
+<p>还是先看2个例子, 来自 <a href="https://bigdl-project.github.io/master/#ProgrammingGuide/Model/Functional/">Grpah API</a>:</p>
+<h3 id="_3">多分支</h3>
+<p>结构:</p>
+<pre><code class="scala">Linear -&gt; ReLU --&gt; Linear -&gt; ReLU ----&gt; Add
+               |-&gt; Linear -&gt; ReLU --|
+</code></pre>
+
+<p>代码:</p>
+<pre><code class="scala">val linear1 = Linear(...).inputs()
+val relu1 = ReLU().inputs(linear1)
+val linear2 = Linear(...).inputs(relu1)
+val relu2 = ReLU().inputs(linear2)
+val linear3 = Linear(...).inputs(relu1)
+val relu3 = ReLU().inputs(linear3)
+val add = CAddTable().inputs(relu2, relu3)
+val model = Graph(Seq[linear1], Seq[add])
+</code></pre>
+
+<h3 id="_4">多个输入</h3>
+<pre><code class="scala">Linear -&gt; ReLU ----&gt; Add
+Linear -&gt; ReLU --|
+</code></pre>
+
+<pre><code class="scala">val linear1 = Linear(...).inputs()
+val relu1 = ReLU().inputs(linear1)
+val linear2 = Linear(...).inputs()
+val relu2 = ReLU().inputs(linear2)
+val add = CAddTable().inputs(relu1, relu2)
+val model = Graph(Seq[linear1, linear2], Seq[add])
+</code></pre>
+
+<p>可以发现从输入到输出, 整个模型构成了一个有向图, 这个比<code>Sequential</code>的情况要更复杂一些.</p>
+<p>来看<code>StaticGraph</code>的<code>updateOutput</code>代码.</p>
+<h3 id="staticgraphupdateoutput">StaticGraph.updateOutput</h3>
+<pre><code class="scala">override def updateOutput(input: Activity): Activity = {
+    var i = 0
+    while(i &lt; forwardExecution.length) {
+        val node = forwardExecution(i)
+        val nodeInput = findInput(node, input)
+        inputCache(i) = nodeInput
+        node.element.forward(nodeInput)
+        i += 1
+    }
+
+    output = dummyOutput.element.output
+    output
+}
+</code></pre>
+
+<p>看一下这个<code>forwardExecution</code>是怎么来的:</p>
+<pre><code class="scala">private val forwardExecution = forwardGraph.topologySort.reverse
+</code></pre>
+
+<p>细节不用管, 总之它就是把整个图拓扑排序一下, 将所有的模块按照宽度优先的顺序排好, 然后再依次<code>forward</code>即可.</p></div>
         
     </div>
 
